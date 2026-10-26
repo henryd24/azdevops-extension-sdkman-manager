@@ -41,12 +41,12 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       # `runner` no existe en el contexto del env a nivel de job: se define aquí.
       - run: echo "LOGS=$RUNNER_TEMP/logs" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
@@ -163,7 +163,7 @@ jobs:
           grep -q "sdkman_curl_connect_timeout=30" "$LOGS/config.log"
           grep -q "sdkman_insecure_ssl=false" "$CFG"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: validate-logs-${{ matrix.os }}
