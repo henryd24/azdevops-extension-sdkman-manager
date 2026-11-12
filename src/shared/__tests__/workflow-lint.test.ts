@@ -1,6 +1,8 @@
 // El linter de seguridad de workflows es JavaScript plano (lo ejecuta también `node scripts/check-workflows.js`).
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { lintAzurePipeline, lintWorkflow } = require("../../../scripts/workflow-lint");
+const { lintAction, lintAzurePipeline, lintWorkflow } = require("../../../scripts/workflow-lint");
+
+const SHA = "a".repeat(40);
 
 const good = () => ({
   on: { push: { branches: ["trunk"] }, pull_request: { branches: ["trunk"] } },
@@ -9,7 +11,7 @@ const good = () => ({
     test: {
       "timeout-minutes": 10,
       steps: [
-        { uses: "actions/checkout@v4", with: { "persist-credentials": false } },
+        { uses: `actions/checkout@${SHA}`, with: { "persist-credentials": false } },
         { run: "echo ${{ matrix.os }} ${{ runner.temp }}" },
       ],
     },
@@ -60,15 +62,21 @@ describe("lintWorkflow", () => {
 
   it("requires persist-credentials: false on checkout", () => {
     const doc = good() as any;
-    doc.jobs.test.steps[0] = { uses: "actions/checkout@v4" };
+    doc.jobs.test.steps[0] = { uses: `actions/checkout@${SHA}` };
     expect(lintWorkflow(doc, "w.yml").join("\n")).toContain("persist-credentials");
   });
 
-  it("requires third-party actions to be pinned to a commit SHA", () => {
+  it.each(["someone/action@v1", "actions/setup-node@v7"])("requires every action to be pinned to a commit SHA: %s", (uses) => {
     const doc = good() as any;
-    doc.jobs.test.steps.push({ uses: "someone/action@v1" });
-    expect(lintWorkflow(doc, "w.yml").join("\n")).toContain("pinned to a commit SHA");
-    doc.jobs.test.steps[2] = { uses: `someone/action@${"a".repeat(40)}` };
+    doc.jobs.test.steps.push({ uses });
+    expect(lintWorkflow(doc, "w.yml").join("\n")).toContain("pinned to a full commit SHA");
+    doc.jobs.test.steps[2] = { uses: `${uses.split("@")[0]}@${SHA}` };
+    expect(lintWorkflow(doc, "w.yml")).toEqual([]);
+  });
+
+  it("allows security-events: write on a pull_request job (CodeQL)", () => {
+    const doc = good() as any;
+    doc.jobs.test.permissions = { contents: "read", "security-events": "write" };
     expect(lintWorkflow(doc, "w.yml")).toEqual([]);
   });
 
@@ -90,10 +98,21 @@ describe("lintWorkflow", () => {
   });
 });
 
+describe("lintAction", () => {
+  it("applies the step rules to composite actions", () => {
+    const action = { runs: { using: "composite", steps: [{ uses: "actions/setup-node@v7" }, { run: "echo ${{ inputs.x }}", shell: "bash" }] } };
+    const problems = lintAction(action, "a.yml").join("\n");
+    expect(problems).toContain("pinned to a full commit SHA");
+    expect(problems).toContain("script injection");
+    expect(lintAction({ runs: { using: "composite", steps: [{ uses: `actions/setup-node@${SHA}` }] } }, "a.yml")).toEqual([]);
+  });
+});
+
 describe("lintAzurePipeline", () => {
-  it("requires pr: none", () => {
+  it("requires pr: none unless the repository allows PR builds", () => {
     expect(lintAzurePipeline({ trigger: ["trunk"] }, "a.yml").join("\n")).toContain("pr: none");
     expect(lintAzurePipeline({ pr: "none" }, "a.yml")).toEqual([]);
+    expect(lintAzurePipeline({ pr: { branches: { include: ["trunk"] } } }, "a.yml", { allowPr: true })).toEqual([]);
   });
 
   it("rejects conditions that drop the default succeeded()", () => {

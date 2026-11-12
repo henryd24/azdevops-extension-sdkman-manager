@@ -165,7 +165,7 @@ El `trigger`/`pr` del archivo solo apuntan a `trunk`: para otras ramas hay que l
 - `actions/checkout` con `persist-credentials: false` (el token no queda en `.git/config`).
 - Nada de `${{ ... }}` dentro de `run:` salvo `matrix.*`/`runner.*`/`strategy.*`: los valores (`inputs`, `vars`, salidas de pasos, datos del evento) pasan por `env:` y se usan como variables de shell (evita la inyección de comandos).
 - `timeout-minutes` en todos los jobs (acota el abuso de minutos).
-- Acciones de terceros solo fijadas por SHA de commit (hoy todas son `actions/*`). Las acciones locales (`./.github/actions/build-vsix`) viajan con el commit y no se fijan.
+- Todas las acciones, también las `actions/*`, fijadas por SHA de commit (Dependabot las actualiza). Las acciones locales (`./.github/actions/build-vsix`) viajan con el commit y no se fijan. El linter (`scripts/workflow-lint.js`) es común a las cinco extensiones y revisa también las acciones compuestas.
 - Azure: `pr: none` (la validación de PRs la hace GitHub Actions) y toda `condition:` conserva `succeeded()`.
 - `validate-tasks.yml` solo se dispara con push y a mano, nunca con PRs.
 - `.github/CODEOWNERS` pide revisión del propietario para `.github/`, `azure-pipelines.yml`, `scripts/` y los `package*.json` (efectivo con la protección de rama «Require review from Code Owners»).
@@ -179,7 +179,7 @@ El `trigger`/`pr` del archivo solo apuntan a `trunk`: para otras ramas hay que l
 - GitHub → protección de rama en `trunk`: exigir PR, revisión de Code Owners y el check `CI`.
 - Azure DevOps (organización o proyecto): *Securely build pull requests from forked repositories*. Con `pr: none` el pipeline no construye PRs, pero conviene dejarlo activo por si algún día se añade un trigger de PR; si se añade, usar agentes hospedados por Microsoft, no activar *Make secrets available to builds of forks* y exigir comentario de un miembro del equipo.
 
-**Riesgos que se aceptan y por qué:** las tareas ejecutan el instalador oficial de SDKMAN (`curl | bash` de `get.sdkman.io`) y descargan JDK de los vendors; es inherente a lo que hace la extensión. Los `uses: actions/*` van por etiqueta mayor (`@v4`), no por SHA: las acciones de primera parte se consideran de confianza (el linter obliga a SHA para cualquier acción de terceros).
+**Riesgos que se aceptan y por qué:** las tareas ejecutan el instalador oficial de SDKMAN (`curl | bash` de `get.sdkman.io`) y descargan JDK de los vendors; es inherente a lo que hace la extensión.
 
 ## Ejemplos de la documentación verificados en Azure (runs 1919 y 1920)
 
