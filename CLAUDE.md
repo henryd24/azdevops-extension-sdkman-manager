@@ -4,7 +4,7 @@ Extensión de Azure DevOps (publisher `hendamm`) que instala **SDKMAN!** y herra
 
 ## Estado
 
-Fases 1-6 de `docs/IMPLEMENTATION_PLAN.md` hechas: `SdkmanSetup`, `SdkmanInstall`, `SdkmanEnv` (.sdkmanrc), `SdkmanRun` (modos `sdk` y `shell`). Fase 7 hecha: `azure-pipelines.yml` ejecutado y verde en Azure (pipeline id 81, proyecto `education`, run 1918: Linux, macOS y Windows). Documentación de uso (Fase 8) hecha; falta decidir la primera release. Ramas: `trunk` existe (los triggers apuntan a ella; el pipeline de Azure la tiene por defecto) pero la rama por defecto de GitHub aún hay que cambiarla a mano; ver `docs/DESIGN.md`, «La rama `trunk`». Decisiones y resultados de los spikes: `docs/DESIGN.md`.
+Fases 1-6 de `docs/IMPLEMENTATION_PLAN.md` hechas: `SdkmanSetup`, `SdkmanInstall`, `SdkmanEnv` (.sdkmanrc), `SdkmanRun` (modos `sdk` y `shell`). Fase 7 hecha: `azure-pipelines.yml` ejecutado y verde en Azure (pipeline id 81, proyecto `education`, run 1918: Linux, macOS y Windows). Documentación de uso (Fase 8) hecha. Release: `release.yml` manual que abre un PR `chore(release)` y, al fusionarlo, crea tag + GitHub Release y publica en el Marketplace (privada) por OIDC; la versión vive en `config/release.json` y los `task.json` (no la subas a mano). Ramas: `trunk` existe (los triggers apuntan a ella; el pipeline de Azure la tiene por defecto) pero la rama por defecto de GitHub aún hay que cambiarla a mano; ver `docs/DESIGN.md`, «La rama `trunk`». Decisiones y resultados de los spikes: `docs/DESIGN.md`.
 
 ## Estructura
 

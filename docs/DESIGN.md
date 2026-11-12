@@ -160,12 +160,12 @@ El `trigger`/`pr` del archivo solo apuntan a `trunk`: para otras ramas hay que l
 **Medidas en el repositorio (comprobadas en cada `npm test` por `scripts/check-workflows.js`, reglas en `scripts/workflow-lint.js`, con tests):**
 
 - Solo `pull_request`, nunca `pull_request_target` ni `workflow_run`: en un PR de fork el token es de solo lectura y no hay secretos.
-- `permissions: contents: read` en el nivel superior de cada workflow; la escritura solo en el job de `release`, que no se dispara con PRs (únicamente push a `trunk` y `workflow_dispatch`).
+- `permissions: contents: read` en el nivel superior de cada workflow; la escritura solo en los jobs de `release.yml` (`prepare`, `release` y `id-token: write` en `marketplace`), que no se disparan con PRs (únicamente push a `trunk` y `workflow_dispatch`).
 - Ningún workflow disparado por `pull_request` referencia `secrets.*`.
 - `actions/checkout` con `persist-credentials: false` (el token no queda en `.git/config`).
 - Nada de `${{ ... }}` dentro de `run:` salvo `matrix.*`/`runner.*`/`strategy.*`: los valores (`inputs`, `vars`, salidas de pasos, datos del evento) pasan por `env:` y se usan como variables de shell (evita la inyección de comandos).
 - `timeout-minutes` en todos los jobs (acota el abuso de minutos).
-- Acciones de terceros solo fijadas por SHA de commit (hoy todas son `actions/*`).
+- Acciones de terceros solo fijadas por SHA de commit (hoy todas son `actions/*`). Las acciones locales (`./.github/actions/build-vsix`) viajan con el commit y no se fijan.
 - Azure: `pr: none` (la validación de PRs la hace GitHub Actions) y toda `condition:` conserva `succeeded()`.
 - `validate-tasks.yml` solo se dispara con push y a mano, nunca con PRs.
 - `.github/CODEOWNERS` pide revisión del propietario para `.github/`, `azure-pipelines.yml`, `scripts/` y los `package*.json` (efectivo con la protección de rama «Require review from Code Owners»).
@@ -191,9 +191,9 @@ El `trigger`/`pr` del archivo solo apuntan a `trunk`: para otras ramas hay que l
 Los triggers de `ci.yml` (PR a `trunk`), `release.yml` (push a `trunk`) y `azure-pipelines.yml` (push a `trunk`) apuntan a `trunk`. Se creó a partir de `claude/optimistic-faraday-0oxar8` (commit `2ae17ed`) y el pipeline de Azure (id 81) tiene `trunk` como rama por defecto.
 
 - **Pendiente a mano:** cambiar la rama por defecto del repositorio de GitHub a `trunk` (*Settings → Branches → Default branch → Switch to another branch → `trunk` → Update*). No se puede hacer desde las herramientas de la sesión; mientras tanto la rama por defecto de GitHub sigue siendo `claude/optimistic-faraday-0oxar8`.
-- **Crear una rama ya no publica nada:** `release.yml` lleva la guarda `if: github.event_name != 'push' || !github.event.created`. Sin ella, crear `trunk` habría publicado una release automática.
+- **Crear una rama no publica nada:** el job `release` lleva la guarda `!github.event.created`.
 - **Los cambios llegan a `trunk` por PR/merge:** `trunk` es una foto del momento en que se creó; lo que se siga haciendo en la rama de trabajo no está en `trunk` hasta que se fusione.
-- **Cuándo se publica una release:** `release.yml` solo se dispara con un push a `trunk` que toque `src/**` (salvo tests), `vss-extension.json`, `config/release.json`, `images/**`, `package*.json` o `tsconfig.json`, o a mano (*Actions → Release → Run workflow*, input `bump`). El PR que lleva la rama de trabajo a `trunk` solo cambia documentación y workflows, así que **fusionarlo no publica nada**. La primera release (`v0.1.0`: sin tags previos `release.yml` usa `0.1.0`, que coincide con la versión de las tareas en `task.json`) se lanza a mano sobre `trunk` o con el siguiente push a `trunk` que cambie código; las siguientes suben el parche (`0.1.1`...) o lo que indique `bump`.
+- **Cuándo se publica una release (desde 2026-11-12, mismo flujo que exec-pipeline y sonarcloud):** a mano con *Actions → Release → Run workflow* (input `bump`), que sube la versión en `config/release.json` y en todos los `task.json` (`.github/scripts/bump-version.mjs`), valida con `.github/actions/build-vsix` y abre un PR `chore(release): vX.Y.Z` con un commit firmado por GitHub. Al fusionarlo, el push a `trunk` que toca `config/release.json` crea el tag y el GitHub Release y publica ese `.vsix` en el Marketplace por OIDC (Trusted Publishing, `.github/scripts/marketplace-token.mjs`). La extensión sigue siendo privada (`public: false`). La versión vive en el repo (antes se calculaba desde el último tag y no se guardaba); se inicializó en 0.1.6, el último tag, así que fusionar ese cambio no publica nada. Ajustes manuales: política de Trusted Publishing en `hendamm` para este repo y `release.yml` (sin environment), *Allow GitHub Actions to create and approve pull requests*, y compartir la extensión una vez con la organización.
 
 ## Tareas de Azure Pipelines deprecadas
 

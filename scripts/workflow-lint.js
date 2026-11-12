@@ -47,7 +47,9 @@ function lintWorkflow(doc, file) {
       const label = `${where}, step ${i + 1}${step.name ? ` ('${step.name}')` : ""}`;
       if (step.uses) {
         const pinned = /@[0-9a-f]{40}$/.test(step.uses);
-        if (!step.uses.startsWith("actions/") && !pinned) fail(`${label} uses '${step.uses}': third-party actions must be pinned to a commit SHA`);
+        // Una acción local (./...) viaja con el propio commit: no es de terceros y no se fija por SHA.
+        const local = step.uses.startsWith("./");
+        if (!step.uses.startsWith("actions/") && !local && !pinned) fail(`${label} uses '${step.uses}': third-party actions must be pinned to a commit SHA`);
         if (step.uses.startsWith("actions/checkout") && step.with?.["persist-credentials"] !== false) {
           fail(`${label} checks out without 'persist-credentials: false' (the token would stay in .git/config for later steps)`);
         }

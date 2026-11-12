@@ -72,6 +72,12 @@ describe("lintWorkflow", () => {
     expect(lintWorkflow(doc, "w.yml")).toEqual([]);
   });
 
+  it("accepts local composite actions without a SHA", () => {
+    const doc = good() as any;
+    doc.jobs.test.steps.push({ uses: "./.github/actions/build-vsix" });
+    expect(lintWorkflow(doc, "w.yml")).toEqual([]);
+  });
+
   it.each([
     "echo ${{ github.event.pull_request.title }}",
     "echo ${{ github.head_ref }}",

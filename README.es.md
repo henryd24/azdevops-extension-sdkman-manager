@@ -16,7 +16,7 @@ Sin una tarea instaladora por herramienta y sin scripts a mano: cuatro tareas pe
 | `SdkmanEnv` | Lee un `.sdkmanrc`, instala lo que lista y lo activa para los pasos siguientes: el repositorio decide las versiones, en local y en CI. |
 | `SdkmanRun` | Ejecuta comandos `sdk` (`list`, `current`, `flush`, `home`...) o cualquier comando con SDKMAN cargado. |
 
-> **No está publicada en el Marketplace.** Es un proyecto comunitario distribuido como código fuente. Constrúyela con tu propio publisher e instálala de forma privada en tu organización (ver el [README en inglés](README.md#install-in-your-organization)). Se ofrece tal cual, sin soporte.
+> **Extensión privada.** El mantenedor la publica en el Marketplace como extensión *privada* (`public: false`), compartida solo con sus organizaciones, así que no aparece en las búsquedas del Marketplace. Para usarla, constrúyela con tu propio publisher e instálala de forma privada en tu organización (ver el [README en inglés](README.md#install-in-your-organization)). Se ofrece tal cual, sin soporte.
 
 # Requisitos
 
@@ -99,7 +99,7 @@ Una extensión de Azure DevOps está ligada a su publisher, así que la construy
    ```
 5. **Instálala** en *Organization settings → Extensions → Shared*.
 
-En un fork, define la variable de repositorio `EXTENSION_PUBLISHER` y cada push a `trunk` que cambie código crea un GitHub Release con el `.vsix` construido para tu publisher.
+En un fork puedes reutilizar el workflow de release (ver [CI / CD](#ci--cd)): pon tu publisher en `config/release.json` y añade en tu publisher una política de Trusted Publishing para tu fork.
 
 # Inicio rápido
 
@@ -433,8 +433,15 @@ Output: `exitCode` (0, o el del primer comando que falló).
 
 Los workflows están protegidos frente a forks y PRs ajenos: los PRs solo ejecutan `ci.yml` (token de solo lectura, sin secretos, sin `pull_request_target`), el pipeline de Azure no construye PRs (`pr: none`) y los cambios solo de documentación no lanzan el CI. Una comprobación en `npm test` hace cumplir estas reglas. Detalle: [`docs/DESIGN.md`](docs/DESIGN.md) («Modelo de seguridad de CI»).
 
-- **GitHub Actions** (`.github/workflows`): `ci.yml` ejecuta tests y typecheck en Linux, Windows y macOS y construye un `.vsix` de desarrollo; `validate-tasks.yml` ejecuta las cuatro tareas de punta a punta (SDKMAN real, descargas reales de JDK) en runners de Linux, macOS y Windows; `release.yml` publica una release en cada push a `trunk` que cambie código.
+- **GitHub Actions** (`.github/workflows`): `ci.yml` ejecuta tests y typecheck en Linux, Windows y macOS y construye un `.vsix` de desarrollo; `validate-tasks.yml` ejecuta las cuatro tareas de punta a punta (SDKMAN real, descargas reales de JDK) en runners de Linux, macOS y Windows; `release.yml` genera las releases (abajo).
 - **Azure Pipelines** (`azure-pipelines.yml`): la misma validación en agentes hospedados de Azure (Linux, macOS y Windows). Se ha ejecutado en agentes hospedados de Azure y pasa, incluidos los pasos de prerrequisito de macOS y Windows.
+
+## Releases
+
+1. Lanza **Actions → Release → Run workflow** sobre `trunk` y elige `patch`, `minor` o `major`. El workflow sube la versión en `config/release.json` y en todos los `src/tasks/*/task.json`, ejecuta tests, typecheck y empaquetado, y abre un pull request `chore(release): vX.Y.Z`.
+2. Al fusionarlo se crean el tag `vX.Y.Z` y un GitHub Release con el `.vsix` adjunto, y ese mismo `.vsix` se publica en el Visual Studio Marketplace (sigue siendo privada).
+
+La publicación usa [Trusted Publishing](https://learn.microsoft.com/azure/devops/extend/publish/overview#publish-with-oidc-trusted-publishing) (OIDC), sin PAT guardado. Necesita una política de Trusted Publishing en el publisher `hendamm` que apunte a este repositorio y al workflow `release.yml` (sin environment), y activar *Settings → Actions → General → Allow GitHub Actions to create and approve pull requests*.
 
 # Aviso
 
