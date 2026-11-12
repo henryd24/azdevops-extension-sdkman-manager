@@ -21,7 +21,7 @@ trigger:
 pr: none
 
 variables:
-  NODE_VERSION: 20.x
+  NODE_VERSION: 24.x
 
 stages:
   - stage: Build

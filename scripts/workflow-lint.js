@@ -1,28 +1,58 @@
-// Reglas de seguridad para los workflows de GitHub Actions y el pipeline de Azure de este repositorio.
-// Se ejecutan en `npm test` (scripts/check-workflows.js) para que no dependan de que alguien las recuerde.
+// Security rules for this repository's GitHub Actions workflows and Azure pipeline.
+// They run in CI (scripts/check-workflows.js) so they do not depend on anyone remembering them.
+// This file is shared by all the extensions: keep it identical across repositories.
 //
-// Modelo de amenaza: cualquiera puede hacer fork y abrir un PR. Su código (incluido package.json, scripts de npm y los
-// propios workflows del PR) corre en nuestros runners, así que ningún flujo disparado por un PR debe tener acceso a
-// secretos ni a permisos de escritura, y ningún dato controlado por el autor del PR debe llegar interpolado a un shell.
+// Threat model: anyone can fork the repository and open a pull request. Its code (package.json, npm scripts and
+// the workflows of the PR itself) runs on our runners, so no flow triggered by a PR may get secrets or write
+// permissions, and no data controlled by the PR author may be interpolated into a shell.
 
 const SAFE_RUN_EXPRESSION = /^(matrix|runner|strategy)\.[\w.-]+$/;
 const FORBIDDEN_TRIGGERS = ["pull_request_target", "workflow_run"];
+const PINNED = /@[0-9a-f]{40}$/;
 
 function triggersOf(doc) {
-  // js-yaml 4 mantiene `on` como cadena, pero por si acaso se acepta también la clave booleana de YAML 1.1.
+  // js-yaml 4 keeps `on` as a string, but the YAML 1.1 boolean key is accepted just in case.
   const on = doc.on ?? doc[true];
   if (typeof on === "string") return [on];
   if (Array.isArray(on)) return on;
   return on ? Object.keys(on) : [];
 }
 
-function hasWrite(permissions) {
+// Write scopes a pull_request job may hold: CodeQL needs `security-events: write` to upload its results, and
+// GitHub gives fork pull requests a read-only token whatever the workflow asks for.
+const PR_ALLOWED_WRITE = new Set(["security-events"]);
+
+function hasWrite(permissions, allowed = new Set()) {
   if (permissions === undefined) return false;
   if (typeof permissions === "string") return permissions === "write-all";
-  return Object.values(permissions).some((v) => v === "write");
+  return Object.entries(permissions).some(([scope, v]) => v === "write" && !allowed.has(scope));
 }
 
-/** Devuelve la lista de problemas (vacía = el workflow cumple las reglas). */
+function lintSteps(steps, where, fail, { fromPullRequest = false } = {}) {
+  (steps ?? []).forEach((step, i) => {
+    const label = `${where}, step ${i + 1}${step.name ? ` ('${step.name}')` : ""}`;
+    if (step.uses) {
+      // Local actions (./.github/actions/...) are reviewed with the repository; every other action is pinned.
+      if (!step.uses.startsWith("./") && !PINNED.test(step.uses)) {
+        fail(`${label} uses '${step.uses}': actions must be pinned to a full commit SHA (a tag can be moved)`);
+      }
+      if (step.uses.startsWith("actions/checkout") && step.with?.["persist-credentials"] !== false) {
+        fail(`${label} checks out without 'persist-credentials: false' (the token would stay in .git/config for later steps)`);
+      }
+    }
+    if (typeof step.run === "string") {
+      for (const match of step.run.matchAll(/\$\{\{([^}]*)\}\}/g)) {
+        const expression = match[1].trim();
+        if (!SAFE_RUN_EXPRESSION.test(expression)) {
+          fail(`${label} interpolates '\${{ ${expression} }}' inside a run script: pass it through 'env:' and use a shell variable (script injection)`);
+        }
+      }
+    }
+    if (fromPullRequest && JSON.stringify(step).includes("secrets.")) fail(`${label} references secrets in a workflow triggered by pull_request`);
+  });
+}
+
+/** Returns the list of problems of a workflow (empty = it follows the rules). */
 function lintWorkflow(doc, file) {
   const problems = [];
   const fail = (message) => problems.push(`${file}: ${message}`);
@@ -41,54 +71,47 @@ function lintWorkflow(doc, file) {
   for (const [jobName, job] of Object.entries(doc.jobs ?? {})) {
     const where = `job '${jobName}'`;
     if (typeof job["timeout-minutes"] !== "number") fail(`${where} has no 'timeout-minutes'`);
-    if (fromPullRequest && hasWrite(job.permissions)) fail(`${where} has write permissions in a workflow triggered by pull_request`);
-
-    (job.steps ?? []).forEach((step, i) => {
-      const label = `${where}, step ${i + 1}${step.name ? ` ('${step.name}')` : ""}`;
-      if (step.uses) {
-        const pinned = /@[0-9a-f]{40}$/.test(step.uses);
-        // Una acción local (./...) viaja con el propio commit: no es de terceros y no se fija por SHA.
-        const local = step.uses.startsWith("./");
-        if (!step.uses.startsWith("actions/") && !local && !pinned) fail(`${label} uses '${step.uses}': third-party actions must be pinned to a commit SHA`);
-        if (step.uses.startsWith("actions/checkout") && step.with?.["persist-credentials"] !== false) {
-          fail(`${label} checks out without 'persist-credentials: false' (the token would stay in .git/config for later steps)`);
-        }
-      }
-      if (typeof step.run === "string") {
-        for (const match of step.run.matchAll(/\$\{\{([^}]*)\}\}/g)) {
-          const expression = match[1].trim();
-          if (!SAFE_RUN_EXPRESSION.test(expression)) {
-            fail(`${label} interpolates '\${{ ${expression} }}' inside a run script: pass it through 'env:' and use a shell variable (script injection)`);
-          }
-        }
-      }
-    });
+    if (fromPullRequest && hasWrite(job.permissions, PR_ALLOWED_WRITE)) fail(`${where} has write permissions in a workflow triggered by pull_request`);
+    lintSteps(job.steps, where, fail);
   }
   return problems;
 }
 
-function* azureSteps(node) {
-  if (Array.isArray(node)) for (const item of node) yield* azureSteps(item);
+/** Rules for composite actions (.github/actions/<name>/action.yml): same step rules as the workflows. */
+function lintAction(doc, file) {
+  const problems = [];
+  const fail = (message) => problems.push(`${file}: ${message}`);
+  if (doc.runs?.using === "composite") lintSteps(doc.runs.steps, "composite action", fail);
+  if (JSON.stringify(doc).includes("secrets.")) fail("references secrets: pass them as inputs from the workflow that needs them");
+  return problems;
+}
+
+function* azureConditions(node) {
+  if (Array.isArray(node)) for (const item of node) yield* azureConditions(item);
   else if (node && typeof node === "object") {
     if (typeof node.condition === "string") yield node;
-    for (const value of Object.values(node)) yield* azureSteps(value);
+    for (const value of Object.values(node)) yield* azureConditions(value);
   }
 }
 
-/** Reglas del pipeline de Azure (azure-pipelines.yml). */
-function lintAzurePipeline(doc, file) {
+/**
+ * Rules for the Azure pipeline (azure-pipelines.yml).
+ * `allowPr`: the repository builds pull requests in Azure on purpose (required status check). Then the pipeline
+ * must not use secrets, and the Azure settings must keep "Make secrets available to builds of forks" off.
+ */
+function lintAzurePipeline(doc, file, { allowPr = false } = {}) {
   const problems = [];
   const fail = (message) => problems.push(`${file}: ${message}`);
-  if (doc.pr !== "none") {
+  if (!allowPr && doc.pr !== "none") {
     fail("must declare 'pr: none': an Azure PR build runs the YAML of the pull request itself, so a fork could change what runs");
   }
-  for (const node of azureSteps(doc)) {
-    // Una condición propia sustituye al succeeded() por defecto: sin él, el paso corre aunque algo anterior haya fallado.
-    if (!/succeeded|always\(\)|failed\(\)/.test(node.condition)) {
+  for (const node of azureConditions(doc)) {
+    // A custom condition replaces the default succeeded(): without it the step runs even if a previous one failed.
+    if (!/succeeded|always\(\)|failed\(\)|canceled\(\)/.test(node.condition)) {
       fail(`condition '${node.condition}' replaces the default succeeded(): use and(succeeded(), ...)`);
     }
   }
   return problems;
 }
 
-module.exports = { lintWorkflow, lintAzurePipeline };
+module.exports = { lintWorkflow, lintAction, lintAzurePipeline };
