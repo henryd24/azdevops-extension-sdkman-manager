@@ -18,8 +18,8 @@
   "author": "Henry Daniel Mosquera",
   "license": "MIT",
   "dependencies": {
-    "azure-pipelines-task-lib": "^5.283.0",
-    "azure-pipelines-tool-lib": "^2.281.0"
+    "azure-pipelines-task-lib": "^5.283.2",
+    "azure-pipelines-tool-lib": "^2.283.0"
   },
   "devDependencies": {
     "@babel/core": "^7.29.13",
